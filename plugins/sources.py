@@ -273,7 +273,7 @@ def _write(dest: Path, rel: str, data: bytes, executable: bool, warnings: list) 
     target.parent.mkdir(parents=True, exist_ok=True)
     with open(target, "xb") as f:  # "x": never through something already there
         f.write(data)
-    if executable and os.name != "nt":
+    if executable:
         target.chmod(target.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
     if data.startswith(LFS_POINTER):
         warnings.append(f"{rel} is stored with Git LFS, which Clips Kitty does not fetch: "
@@ -370,7 +370,7 @@ def copy_folder(folder: Path, dest: Path) -> list[str]:
         except OSError as e:
             log.warning("Couldn't read %s: %s", path, e)
             raise _unreadable(rel) from e
-        _write(dest, rel, data, os.access(path, os.X_OK) and os.name != "nt", warnings)
+        _write(dest, rel, data, os.access(path, os.X_OK), warnings)
     return warnings
 
 

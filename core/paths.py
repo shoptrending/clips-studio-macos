@@ -15,6 +15,11 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 
 
+def _appdata_base() -> Path:
+    """Per-user application data directory for an installed build."""
+    return Path.home() / "Library" / "Application Support"
+
+
 def resolve_data_dir(config: dict) -> Path:
     """The absolute directory for this install's data.
 
@@ -42,8 +47,11 @@ def resolve_data_dir(config: dict) -> Path:
         # every existing user's library, settings, creator profiles and clips
         # already live. Renaming it makes an upgrade look like a factory reset.
         # No user ever sees this string. Leave it.
-        base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
-        return base / "Clips Studio" / raw
+        #
+        # On macOS this lands in ~/Library/Application Support/Clips Studio/,
+        # the standard per-user location. The same "Clips Studio" name is used
+        # so a future rename does not split the data across two folders.
+        return _appdata_base() / "Clips Studio" / raw
 
     # Checkout: next to the code, not next to the terminal.
     return _REPO_ROOT / raw
@@ -109,10 +117,9 @@ def user_config_path(bundled: Path) -> Path:
     if not getattr(sys, "frozen", False):
         return bundled
 
-    base = Path(os.environ.get("LOCALAPPDATA") or Path.home() / "AppData" / "Local")
     # Same folder as resolve_data_dir, and kept under the pre-1.1.3 name for
     # the same reason — see the note there before changing it.
-    user_copy = base / "Clips Studio" / bundled.name
+    user_copy = _appdata_base() / "Clips Studio" / bundled.name
 
     if not user_copy.exists():
         try:

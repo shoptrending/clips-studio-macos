@@ -4,130 +4,27 @@ Transcripts are cached as JSON per video id so re-runs (e.g. while tuning
 the LLM prompt) skip the expensive transcription step.
 """
 
-import ctypes
 import json
-import os
 import re
-import sys
 from pathlib import Path
 
 from core import cancel, progress
 from core.binaries import whisper_model
 from core.models import Segment
 
-# faster-whisper's engine, CTranslate2, is built against CUDA 12 and loads
-# cuBLAS 12 by name the first time it runs on the GPU, not when the model
-# loads. It brings its own cuDNN, but not cuBLAS. PyTorch moved to CUDA 13
-# (for the RTX 50-series), so its folder has cublas64_13.dll, not this: it
-# comes from NVIDIA's nvidia-cublas-cu12 wheel (requirements.txt, bundled in
-# the app) or a CUDA 12 toolkit. Measured (issue #111): without either, every
-# job on an NVIDIA PC failed at "Transcribing"; a CUDA 12 toolkit on the
-# developer's PATH had hidden it.
-_CUBLAS12 = ("cublasLt64_12.dll", "cublas64_12.dll")   # the first is the second's dependency
-_GPU_LIBRARY_ERROR = re.compile(r"cublas|cudnn|cuda", re.IGNORECASE)
-_NO_CUBLAS12 = ("GPU transcription needs NVIDIA's cuBLAS 12 (cublas64_12.dll), which isn't on this PC. "
-                "Reinstalling Clips Kitty brings it back (from source: pip install -r requirements.txt).")
-
-
-def _cublas12_dirs() -> list[Path]:
-    """Where cuBLAS 12 may be, the app's own copy first."""
-    dirs: list[Path] = []
-    if getattr(sys, "frozen", False):
-        # Where the installed app's build puts it (clips-studio.spec), found
-        # even if the namespace package doesn't import in the frozen app.
-        dirs.append(Path(getattr(sys, "_MEIPASS", "")) / "nvidia" / "cublas" / "bin")
-    try:
-        import nvidia.cublas
-
-        dirs += [Path(p) / "bin" for p in nvidia.cublas.__path__]
-    except Exception:
-        pass  # no cuBLAS wheel installed: the other places are still looked at
-    if os.environ.get("CUDA_PATH"):
-        dirs.append(Path(os.environ["CUDA_PATH"]) / "bin")
-    dirs += [Path(p) for p in os.environ.get("PATH", "").split(os.pathsep) if p]
-    try:
-        import torch
-
-        dirs.append(Path(torch.__file__).parent / "lib")   # a CUDA 12 PyTorch had them
-    except Exception:
-        pass  # no PyTorch here: one place fewer to look
-    return dirs
-
-
-def _cuda12_blas(dirs: list[Path] | None = None, load=None) -> Path | None:
-    """The folder cuBLAS 12 was loaded from, or None when it isn't here.
-
-    Loaded by full path, and its folder put first on PATH: CTranslate2's own
-    later load asks for it by name, which finds a copy already loaded, and
-    os.add_dll_directory alone does not reach that load. Not Windows: the
-    system's loader finds the libraries as it always has."""
-    if os.name != "nt":
-        return Path(".")
-    load = load or ctypes.WinDLL
-    for folder in (_cublas12_dirs() if dirs is None else dirs):
-        if not all((folder / name).is_file() for name in _CUBLAS12):
-            continue
-        try:
-            for name in _CUBLAS12:
-                load(str(folder / name))
-        except OSError as e:
-            print(f"  Whisper: couldn't load cuBLAS 12 from {folder} ({e})")
-            continue
-        os.environ["PATH"] = str(folder) + os.pathsep + os.environ.get("PATH", "")
-        try:
-            os.add_dll_directory(str(folder))
-        except (OSError, AttributeError):
-            pass  # the libraries are loaded and the folder is on PATH already
-        return folder
-    return None
-
-
-def _on_gpu(model) -> bool:
-    """Whether a loaded Whisper model runs on the GPU (CTranslate2 says)."""
-    return getattr(getattr(model, "model", None), "device", "cpu") == "cuda"
-
 
 def _load_model(model_size: str, device: str):
-    # Imported lazily: loading faster-whisper/ctranslate2 takes seconds and
-    # isn't needed when the transcript is cached.
     from faster_whisper import WhisperModel
 
-    # Every name handed to WhisperModel goes through here first. A bare size
-    # name means "fetch it from Hugging Face", which in an installed copy is a
-    # silent multi-gigabyte download in the middle of someone's first video;
-    # whisper_model() swaps in the bundled weights when they are present.
     def load(name: str, **kwargs):
         return WhisperModel(whisper_model(name), **kwargs)
 
-    if device in ("auto", "cuda") and _cuda12_blas() is None:
-        if device == "cuda":
-            raise RuntimeError(_NO_CUBLAS12)   # the GPU was asked for by name
-        print(f"  Whisper: {_NO_CUBLAS12} Transcribing on the CPU, which is slower.")
-    elif device in ("auto", "cuda"):
-        try:
-            if model_size == "auto":
-                # large-v3-turbo: large-v3 accuracy with a 4-layer decoder —
-                # several times faster than medium AND more accurate. Falls
-                # back to small, which is the other bundled size: falling back
-                # to a size that isn't shipped would trade a load failure for
-                # a silent download, which is the worse of the two.
-                for name in ("large-v3-turbo", "small"):
-                    try:
-                        model = load(name, device="cuda", compute_type="float16")
-                        print(f"  Whisper: GPU (CUDA) active, model '{name}'")
-                        return model
-                    except Exception as e:
-                        turbo_err = e
-                raise turbo_err
-            model = load(model_size, device="cuda", compute_type="float16")
-            print(f"  Whisper: GPU (CUDA) active, model '{model_size}'")
-            return model
-        except Exception as e:
-            if device == "cuda":
-                raise  # user explicitly demanded GPU — don't silently downgrade
-            print(f"  Whisper: GPU unavailable ({str(e)[:90]}) — using CPU")
+    # CTranslate2 (faster-whisper's engine) only accelerates on CUDA, which
+    # macOS does not have. CPU is the only option here.
+    if device == "auto":
+        print("  Whisper: using CPU (CTranslate2 has no Metal/MPS support)")
     if model_size == "auto":
-        model_size = "small"  # on CPU, medium is 3-5x slower — speed wins there
+        model_size = "small"
     return load(model_size, device="cpu", compute_type="auto")
 
 
@@ -229,17 +126,7 @@ def transcribe(
     print(f"  Loading whisper model '{model_size}' (device={device})...")
     model = _load_model(model_size, device)
 
-    try:
-        segments, info = _run(model, video_path, language, hotwords)
-    except RuntimeError as e:
-        # The GPU's libraries are only loaded at the first encode, after the
-        # model has loaded, so a GPU that loads can still fail here. The job
-        # goes on, on the CPU, rather than failing (a cancel is not a
-        # RuntimeError, and still stops it).
-        if device == "cuda" or not _on_gpu(model) or not _GPU_LIBRARY_ERROR.search(str(e)):
-            raise
-        print(f"\n  Whisper: the GPU failed ({str(e)[:120]}); transcribing again on the CPU")
-        segments, info = _run(_load_model(model_size, "cpu"), video_path, language, hotwords)
+    segments, info = _run(model, video_path, language, hotwords)
 
     looped = _collapse_repetition_loops(segments)
     if looped:

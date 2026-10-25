@@ -100,7 +100,7 @@ def _get_model(model_name: str):
             from ultralytics import YOLO  # lazy: heavy import, pulls in torch
 
             from core.binaries import yolo_weights
-            from core.gpu import cuda_usable
+            from core.gpu import torch_device
 
             # Absolute path, not the bare name: ultralytics resolves a bare
             # name against the working directory and downloads it when that
@@ -109,28 +109,23 @@ def _get_model(model_name: str):
             # fails outright on a machine with no route to GitHub.
             _model = YOLO(yolo_weights(model_name))
 
-            usable, reason = cuda_usable()
-            if not usable:
-                print(f"  Tracking: using CPU — {reason}")
+            device = torch_device()
+            if device == "cpu":
+                print(f"  Tracking: using CPU")
             else:
-                _model.to("cuda")
+                _model.to(device)
                 # Prove the GPU before the whole job depends on it. Moving
-                # weights launches no kernel, so .to("cuda") succeeds even on a
-                # card this build has no code for, and the failure would
-                # otherwise surface at the first predict() — thousands of
-                # frames into someone's video, as a crash rather than a
-                # fallback. One throwaway inference buys that back.
-                #
-                # Calls predict directly rather than _detect, which would
-                # deadlock on the non-reentrant lock already held here.
+                # weights launches no kernel, so .to("mps") succeeds even when
+                # an unsupported op would surface at the first real forward
+                # pass. One throwaway inference buys that back.
                 try:
                     _model.predict(np.zeros((32, 32, 3), np.uint8),
-                                   device="cuda", verbose=False)
+                                   device=device, verbose=False)
                 except Exception as e:
                     _model.to("cpu")
                     print(f"  Tracking: GPU unusable ({str(e)[:90]}) — using CPU")
                 else:
-                    print(f"  Tracking: GPU (CUDA) active — {reason}")
+                    print(f"  Tracking: GPU (Metal/MPS) active")
     return _model
 
 

@@ -235,45 +235,17 @@ def check_whisper(configured: str) -> Check:
 def check_gpu() -> Check:
     """Not blocking: the app works on CPU, just slowly. Worth saying so
     plainly rather than letting someone conclude it's broken."""
-    from core.gpu import NO_GPU, cuda_usable, gpu_too_old
+    from core.gpu import mps_usable
 
-    usable, reason = cuda_usable()
+    usable, reason = mps_usable()
 
     if usable:
-        try:
-            import torch
-
-            vram = torch.cuda.get_device_properties(0).total_memory / 1e9
-            return Check(name="gpu", ok=True, detail=f"{reason} ({vram:.0f} GB)",
-                         blocking=False)
-        except Exception:
-            # The GPU works; only the size lookup failed. Not worth a warning.
-            return Check(name="gpu", ok=True, detail=reason, blocking=False)
-
-    # A GPU that is present but unusable used to be reported here as ok=True,
-    # so someone with a card newer than the bundled PyTorch was told their GPU
-    # was fine right up until the job crashed on it. It is still not blocking —
-    # CPU genuinely works — but it is not "fine", and the two cases share no
-    # remedy at all.
-    if reason == NO_GPU:
-        fix = ("Clips Kitty works without a GPU, but processing is much "
-               "slower. An NVIDIA GPU gives the biggest speed-up.")
-    elif gpu_too_old(reason):
-        # Told to wait for a newer build, a GTX 10-series owner would be
-        # waiting for the release that removes their card: the CUDA that adds
-        # Blackwell is the same one that dropped Maxwell, Pascal and Volta.
-        # Saying "permanent" is kinder than an upgrade that never arrives.
-        fix = ("Processing will run on the CPU, which works but is slower. "
-               "This is permanent for this graphics card — the CUDA versions "
-               "that support newer cards dropped support for this one, so a "
-               "future release will not change it.")
-    else:
-        fix = ("Processing will run on the CPU, which works but is slower. "
-               "Nothing to do on your end: this needs a Clips Kitty build "
-               "made against a newer CUDA, which a future release will carry.")
+        return Check(name="gpu", ok=True, detail=reason, blocking=False)
 
     return Check(name="gpu", ok=False, blocking=False,
-                 detail=f"{reason} — running on CPU", fix=fix)
+                 detail=f"{reason} — running on CPU",
+                 fix="Processing will run on the CPU, which works but is slower. "
+                     "Apple Silicon (M1 or later) gives a significant speed-up via Metal.")
 
 
 def check_disk(data_dir: Path) -> Check:

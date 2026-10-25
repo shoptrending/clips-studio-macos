@@ -81,7 +81,7 @@ TIME_LIMIT_BOTH = ("Clips Kitty stops it after {n} {unit} when it rates or under
 
 
 def secrets_notice() -> str:
-    account = "your Windows account" if sys.platform == "win32" else "your user account"
+    account = "your user account"
     return (f"Your keys for this pipeline are stored for {account}. Other pipelines and programs running as you "
             "can read them.")
 

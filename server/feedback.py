@@ -179,40 +179,25 @@ def _cuda() -> dict:
     try:
         import torch
 
-        from core.gpu import cuda_usable
+        from core.gpu import mps_usable
 
-        usable, reason = cuda_usable()
+        usable, reason = mps_usable()
         out: dict = {
             "usable": usable,
             "reason": reason,
             "torch": torch.__version__,
-            "built_for": torch.cuda.get_arch_list(),
         }
-        if torch.cuda.is_available():
-            major, minor = torch.cuda.get_device_capability(0)
-            out["device_capability"] = f"sm_{major}{minor}"
+        if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            out["device"] = "mps"
         return out
     except Exception as e:
-        # Importing torch is seconds and can fail outright; a report missing
-        # this section is far better than a report that never sends.
         return {"usable": "?", "reason": f"could not check ({type(e).__name__})"}
 
 
 def _ram_gb() -> float:
     try:
-        import ctypes
-
-        class MEMORYSTATUSEX(ctypes.Structure):
-            _fields_ = [("dwLength", ctypes.c_ulong), ("dwMemoryLoad", ctypes.c_ulong),
-                        ("ullTotalPhys", ctypes.c_ulonglong), ("ullAvailPhys", ctypes.c_ulonglong),
-                        ("ullTotalPageFile", ctypes.c_ulonglong), ("ullAvailPageFile", ctypes.c_ulonglong),
-                        ("ullTotalVirtual", ctypes.c_ulonglong), ("ullAvailVirtual", ctypes.c_ulonglong),
-                        ("ullAvailExtendedVirtual", ctypes.c_ulonglong)]
-
-        st = MEMORYSTATUSEX()
-        st.dwLength = ctypes.sizeof(MEMORYSTATUSEX)
-        ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(st))
-        return round(st.ullTotalPhys / (1024 ** 3), 1)
+        import os
+        return round(os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") / (1024 ** 3), 1)
     except Exception:
         return 0.0
 

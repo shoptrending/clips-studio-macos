@@ -228,13 +228,14 @@ function startOllama(): void {
 
   // PyInstaller puts bundled data under _internal/, which is where the spec
   // places the runtime — the same shape as _internal/ffmpeg.
-  const exe = join(process.resourcesPath, 'backend', '_internal', 'ollama', 'ollama.exe')
+  const ollamaBin = 'ollama'
+  const exe = join(process.resourcesPath, 'backend', '_internal', 'ollama', ollamaBin)
 
   // Models are gigabytes, so they live with the creator's other big files
   // rather than in their user profile. This must match how data_dir resolves
   // in core/paths.py, or the engine and the runtime disagree about what is
   // downloaded.
-  const localAppData = process.env.LOCALAPPDATA ?? join(app.getPath('home'), 'AppData', 'Local')
+  const localAppData = join(app.getPath('home'), 'Library', 'Application Support')
   const dataDir = join(localAppData, 'Clips Studio', 'data')
   // The 1.1.3 rename (d708b34) moved this folder to "Clips Kitty" while
   // core/paths.py rightly kept the data folder at "Clips Studio", so the two
@@ -248,7 +249,7 @@ function startOllama(): void {
   // sat untouched for a week are deleted first, while Ollama isn't running.
   const dropped = dropStalePartials(models)
 
-  // Ollama's own output goes to %LOCALAPPDATA%\Clips Studio\data\logs\ollama.log,
+  // Ollama's own output goes to ~/Library/Application Support/Clips Studio/data/logs/ollama.log,
   // the default data folder's logs. A data_dir set in settings.yaml moves the
   // job logs but not this file. It used to go nowhere, so a download that
   // failed inside Ollama left nothing to read.
@@ -274,7 +275,6 @@ function startOllama(): void {
       // The ones nobody comes back to are cleared by dropStalePartials above.
       OLLAMA_NOPRUNE: '1'
     },
-    windowsHide: true
   })
   // The child has its own handle on the file now.
   if (log !== null) closeSync(log)
@@ -295,13 +295,13 @@ function startOllama(): void {
  */
 function killTree(child: ChildProcess | null): void {
   if (!child?.pid) return
-  if (process.platform === 'win32') {
-    try {
-      execFileSync('taskkill', ['/pid', String(child.pid), '/T', '/F'], { stdio: 'ignore' })
-      return
-    } catch {
-      // Already exited, or taskkill is unavailable — fall through to a signal.
-    }
+  // Kill the child's descendants so grandchildren (FFmpeg, Ollama runners)
+  // don't survive. pkill -P sends SIGTERM to every process whose parent is
+  // child.pid.
+  try {
+    execFileSync('pkill', ['-P', String(child.pid)], { stdio: 'ignore' })
+  } catch {
+    // No children, or already exited — the child.kill() below still runs.
   }
   child.kill()
 }
@@ -357,14 +357,14 @@ function startBackend(): void {
   // Dev: run the repo's Python directly (repo root is one level up from ui/).
   // Packaged: run the frozen backend exe shipped in resources/backend/.
   if (app.isPackaged) {
-    const exe = join(process.resourcesPath, 'backend', 'api.exe')
+    const backendBin = 'api'
+    const exe = join(process.resourcesPath, 'backend', backendBin)
     // The backend is built as a console app so its prints have somewhere to
     // go (a windowed build gives it no stdout, and every print() then
     // throws). windowsHide keeps that console from flashing up at the user.
     backend = spawn(exe, ['serve', '--port', String(API_PORT)], {
       stdio: 'ignore',
-      env: backendEnv,
-      windowsHide: true
+      env: backendEnv
     })
   } else if (process.env.BACKEND_EXTERNAL !== '1') {
     const repoRoot = join(app.getAppPath(), '..')
@@ -435,10 +435,6 @@ function createWindow(): void {
         asking = false
       }
     })()
-  })
-  // Windows logging off or shutting down skips before-quit, so say it here.
-  win.on('session-end', () => {
-    quitting = true
   })
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = null

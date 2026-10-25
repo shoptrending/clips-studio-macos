@@ -1,19 +1,14 @@
-"""Hardware-accelerated encoding selection — NVIDIA, AMD, Intel, and Apple Silicon.
+"""Hardware-accelerated encoding selection — Apple Silicon (VideoToolbox).
 
-Hardware encoders render H.264 many times faster than libx264 on CPU and
-leave the CPU free for detection/analysis. Preference order:
-
-  NVENC (NVIDIA) -> AMF (AMD) -> QSV (Intel) -> VideoToolbox (Apple Silicon/macOS) -> libx264 (CPU)
+VideoToolbox renders H.264 many times faster than libx264 on CPU and
+leaves the CPU free for detection/analysis.
 
 Detection is done once per process by actually test-encoding a frame WITH
 THE EXACT ARGUMENTS we render with — an encoder can be listed by FFmpeg but
-still fail at runtime (missing hardware, driver/session limits, unsupported
-flags on older drivers). A failed probe just means the next candidate is
-tried, so a wrong flag on some AMD driver degrades to CPU encoding instead
-of breaking renders.
+still fail at runtime. A failed probe falls back to CPU encoding.
 
 Config: video.encoder in settings.yaml — "auto" (default) or force one of
-"nvenc" / "amf" / "qsv" / "videotoolbox" / "cpu".
+"videotoolbox" / "cpu".
 """
 
 import subprocess
@@ -29,9 +24,6 @@ CPU_ARGS = ["-c:v", "libx264", "-preset", "veryfast", "-crf", "20"]
 # vary wildly between driver generations (especially AMF), while plain
 # bitrate control works everywhere. 8 Mbps looks clean for 1080x1920 Shorts.
 _CANDIDATES: dict[str, list[str]] = {
-    "nvenc": ["-c:v", "h264_nvenc", "-preset", "p5", "-rc", "vbr", "-cq", "23", "-b:v", "0"],
-    "amf": ["-c:v", "h264_amf", "-quality", "quality", "-b:v", "8M", "-maxrate", "12M"],
-    "qsv": ["-c:v", "h264_qsv", "-global_quality", "23", "-preset", "medium"],
     "videotoolbox": ["-c:v", "h264_videotoolbox", "-b:v", "8M", "-maxrate", "12M"],
 }
 
@@ -68,13 +60,7 @@ def _select(mode: str) -> tuple[str, list[str]]:
     # auto: first hardware encoder that actually works on this machine
     for name, args in _CANDIDATES.items():
         if _probe(args):
-            vendor = {
-                "nvenc": "NVIDIA NVENC",
-                "amf": "AMD AMF",
-                "qsv": "Intel QSV",
-                "videotoolbox": "Apple VideoToolbox",
-            }[name]
-            print(f"  Encoder: {vendor} (GPU) available — using hardware encoding")
+            print(f"  Encoder: Apple VideoToolbox (GPU) available — using hardware encoding")
             return name, args
     return "cpu", CPU_ARGS
 
