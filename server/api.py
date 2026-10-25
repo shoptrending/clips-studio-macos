@@ -19,7 +19,7 @@ import urllib.error
 from pathlib import Path
 
 import requests as _requests
-from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
@@ -951,6 +951,26 @@ def create_app(config: dict, settings_path: Path) -> FastAPI:
         worker.notify()
         broadcaster.publish({"type": "queue"})
         return {"job_id": job_id}
+
+    @app.post("/videos/upload")
+    async def upload_video_file(file: UploadFile):
+        """Browser-mode file upload: receives a video via multipart form data,
+        saves it into data/uploads/, and returns the local path so the existing
+        POST /videos/local flow can import it."""
+        import shutil
+
+        if not file.filename:
+            raise HTTPException(400, "no file provided")
+        suffix = Path(file.filename).suffix.lower()
+        if suffix not in (".mp4", ".mov", ".mkv", ".avi", ".webm", ".m4v", ".ts", ".flv"):
+            raise HTTPException(400, f"unsupported video format: {suffix}")
+        upload_dir = data_dir / "uploads"
+        upload_dir.mkdir(parents=True, exist_ok=True)
+        safe = re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", Path(file.filename).stem)[:60]
+        dest = upload_dir / f"{safe}{suffix}"
+        with open(dest, "wb") as out:
+            shutil.copyfileobj(file.file, out)
+        return {"path": str(dest), "name": file.filename}
 
     @app.get("/videos/local/shape")
     def local_video_shape(path: str):

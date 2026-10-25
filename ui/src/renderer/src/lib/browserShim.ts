@@ -19,6 +19,42 @@ function unavailable(what: string): void {
   )
 }
 
+const VIDEO_ACCEPT = '.mp4,.mov,.mkv,.avi,.webm,.m4v,.ts,.flv'
+
+function browserPickFiles(accept: string, multiple: boolean): Promise<File[]> {
+  return new Promise((resolve) => {
+    const input = document.createElement('input')
+    input.type = 'file'
+    input.accept = accept
+    input.multiple = multiple
+    input.style.display = 'none'
+    input.addEventListener('change', () => {
+      const files = input.files ? Array.from(input.files) : []
+      input.remove()
+      resolve(files)
+    })
+    input.addEventListener('cancel', () => {
+      input.remove()
+      resolve([])
+    })
+    document.body.appendChild(input)
+    input.click()
+  })
+}
+
+async function uploadFileToBackend(file: File): Promise<string | null> {
+  const form = new FormData()
+  form.append('file', file)
+  try {
+    const res = await fetch('http://127.0.0.1:8765/videos/upload', { method: 'POST', body: form })
+    if (!res.ok) return null
+    const data = await res.json()
+    return data.path ?? null
+  } catch {
+    return null
+  }
+}
+
 export function installBrowserShim(): void {
   if (window.studio) return // running under Electron; leave it alone
 
@@ -34,12 +70,19 @@ export function installBrowserShim(): void {
       return null
     },
     pickVideoFile: async () => {
-      unavailable('Choosing a video file')
-      return null
+      const files = await browserPickFiles(VIDEO_ACCEPT, false)
+      if (files.length === 0) return null
+      return await uploadFileToBackend(files[0])
     },
     pickVideoFiles: async () => {
-      unavailable('Choosing video files')
-      return []
+      const files = await browserPickFiles(VIDEO_ACCEPT, true)
+      if (files.length === 0) return []
+      const paths: string[] = []
+      for (const file of files) {
+        const path = await uploadFileToBackend(file)
+        if (path) paths.push(path)
+      }
+      return paths
     },
     pickThumbnailImage: async () => null,
     // No warning: this one is polled speculatively after a signup link is
