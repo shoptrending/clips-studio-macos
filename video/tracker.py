@@ -840,6 +840,8 @@ def compute_tracking(
                                       # genuinely can't fit a 9:16 crop
     force_fit_blur: bool = False,     # user override: always letterbox, cropped
                                       # tight to the subject like the automatic one
+    crop_padding: float = 0.0,        # widen the 9:16 crop by this fraction
+                                      # (0 = standard, 0.12 = 12% wider with bars)
     *,
     shot_aware: bool = False,         # tracking.shot_aware: cuts found to the frame and
                                       # the subject chosen afresh at each (_ShotReplay).
@@ -859,12 +861,15 @@ def compute_tracking(
                 dead_zone=dead_zone, max_pan_speed=max_pan_speed, min_confidence=min_confidence,
                 switch_margin=switch_margin, switch_seconds=switch_seconds,
                 fit_blur_fraction=fit_blur_fraction, force_fit_blur=force_fit_blur,
+                crop_padding=crop_padding,
                 shot_aware=True, no_subject=no_subject,
                 _cuts=ShotCuts(cut_cap, fallback=_CUT_DIFF_SAMPLED),
             )
     with video_capture(clip_path) as cap:
         video_fps = cap.get(cv2.CAP_PROP_FPS) or 30.0
         frame_step = max(1, round(video_fps / sample_fps))
+        src_w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 1920)
+        src_h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 1080)
         model = _get_model(model_name)
 
         tracks: dict[int, _Track] = {}
@@ -1055,7 +1060,7 @@ def compute_tracking(
         _ASD_SPEECH * float(np.percentile(env, 90)) if env is not None else 0.0
     )
     # Who to be on, for every sample, decided up front. See _shot_plan.
-    shots = _shot_plan(asd_scores, samples, env, speech_floor, _SWITCH_HOLD)
+    shots = _shot_plan(asd_scores, samples, env, speech_floor, switch_seconds)
 
     # Track state is about to be rewound sample by sample. Everything after
     # this loop — the letterbox decision, the facecam layout, face_y — reads
@@ -1365,7 +1370,12 @@ def compute_tracking(
     face_y = None
     if active_id in tracks and tracks[active_id].head_cys:
         face_y = round(float(np.median(tracks[active_id].head_cys)), 4)
-    return {"mode": "track", "path": path, "face_y": face_y}
+    result = {"mode": "track", "path": path, "face_y": face_y}
+    if crop_padding > 0:
+        base_frac = (src_h * 9 / 16) / src_w
+        padded_frac = base_frac * (1.0 + crop_padding)
+        result["zoom"] = [(0.0, round(padded_frac, 4))]
+    return result
 
 
 # ---- detection + identity assignment ----------------------------------------

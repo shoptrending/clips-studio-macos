@@ -1626,8 +1626,11 @@ def _render_files(
                         intermediate,
                         model_name=tracking_cfg["detector"],
                         sample_fps=tracking_cfg["sample_fps"],
+                        max_pan_speed=float(tracking_cfg.get("max_pan_speed", 0.30)),
+                        switch_margin=float(tracking_cfg.get("switch_margin", 1.5)),
+                        switch_seconds=float(tracking_cfg.get("switch_hold", 1.5)),
+                        crop_padding=float(tracking_cfg.get("crop_padding", 0.0)),
                         force_fit_blur=(crop_mode == "letterbox"),
-                        # On unless set off (ARCHITECTURE.md §5, video/cuts.py).
                         shot_aware=cuts.shot_aware_on(tracking_cfg),
                         no_subject=tracking_cfg.get("shot_aware_no_subject", "center"),
                     )

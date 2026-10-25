@@ -258,8 +258,8 @@ export default function SetupWizard({ onClose }: { onClose: () => void }): JSX.E
   const steps = ['Welcome', 'Setting up', 'Ready']
 
   return (
-    <div className="fixed inset-0 z-50 bg-base/95 backdrop-blur-sm grid place-items-center p-6">
-      <div className="w-full max-w-2xl bg-surface border border-raised/60 rounded-2xl shadow-2xl overflow-hidden">
+    <div className="fixed inset-0 z-50 bg-base/95 backdrop-blur-sm grid place-items-center p-6 overflow-y-auto">
+      <div className="w-full max-w-2xl bg-surface border border-raised/60 rounded-2xl shadow-2xl overflow-hidden my-auto">
         {/* progress rail */}
         <div className="flex">
           {steps.map((label, i) => (

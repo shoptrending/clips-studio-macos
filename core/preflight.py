@@ -13,6 +13,7 @@ something looks broken.
 Nothing here raises — a check that itself fails is reported as a failed check.
 """
 
+import os
 import shutil
 import subprocess
 from dataclasses import dataclass, field
@@ -197,6 +198,30 @@ def check_cloud_transcription(provider: str, data_dir) -> Check:
     return Check(name="transcription", ok=True, detail=f"online with {spec.label} (your API key)")
 
 
+def _hf_cached_whisper_sizes() -> list[str]:
+    """Whisper sizes already in the Hugging Face cache."""
+    from pathlib import Path
+    hf_home = Path(os.environ.get("HF_HOME", Path.home() / ".cache" / "huggingface"))
+    ct2_dir = hf_home / "hub"
+    if not ct2_dir.is_dir():
+        return []
+    found: list[str] = []
+    _SIZE_REPOS = {
+        "small": "Systran/faster-whisper-small",
+        "medium": "Systran/faster-whisper-medium",
+        "large-v3": "Systran/faster-whisper-large-v3",
+        "large-v3-turbo": "Systran/faster-whisper-large-v3-turbo",
+    }
+    for size, repo in _SIZE_REPOS.items():
+        repo_dir = ct2_dir / f"models--{repo.replace('/', '--')}"
+        if repo_dir.is_dir():
+            for snapshot in (repo_dir / "snapshots").iterdir() if (repo_dir / "snapshots").is_dir() else []:
+                if (snapshot / "model.bin").exists():
+                    found.append(size)
+                    break
+    return found
+
+
 def check_whisper(configured: str) -> Check:
     """Transcription weights.
 
@@ -206,7 +231,9 @@ def check_whisper(configured: str) -> Check:
     like a hang — so it is worth saying up front that it is going to happen.
     """
     have = bundled_whisper_sizes()
-    if not have:
+    hf_have = _hf_cached_whisper_sizes()
+    all_have = list(dict.fromkeys(have + hf_have))
+    if not all_have:
         return Check(
             name="whisper",
             ok=False,
@@ -217,15 +244,13 @@ def check_whisper(configured: str) -> Check:
                 "happening while it runs.",
         )
 
-    # "auto" resolves at load time by device, so both sizes have to be there
-    # for it to be satisfied whichever machine this turns out to be.
     wanted = ("large-v3-turbo", "small") if configured == "auto" else (configured,)
-    absent = [size for size in wanted if size not in have]
+    absent = [size for size in wanted if size not in all_have]
     return Check(
         name="whisper",
         ok=not absent,
         blocking=False,
-        detail=f"{', '.join(have)} bundled",
+        detail=f"{', '.join(all_have)} available",
         fix="" if not absent else
             f"{' and '.join(absent)} will be downloaded on first use, which "
             f"pauses that video for a few minutes.",

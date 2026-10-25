@@ -46,7 +46,7 @@ llm:
   ollama_host: http://localhost:11434
 
 whisper:
-  model: auto           # auto = large-v3-turbo on GPU, small on CPU. Or force:
+  model: small          # auto = large-v3-turbo on GPU, small on CPU. Or force:
                         # tiny / base / small / medium / large-v3 / large-v3-turbo
   device: auto          # cuda if available, else cpu
 
@@ -68,7 +68,7 @@ clips:
                         # (turn on the 60s+ toggle for TikTok-length clips)
   vertical: true        # true 9:16 1080x1920 with YOLOv8 subject tracking
   captions: true        # burn word-synced captions into the clips
-  outro: true           # append the 2.9s Clips Kitty end card to each clip.
+  outro: false           # append the 2.9s Clips Kitty end card to each clip.
                         # Stream-copied, so the clip is never re-encoded.
                         # Absent counts as true, so upgrading turns it on.
 
@@ -127,6 +127,16 @@ tracking:
                              # head-priority framing even when no face is
                              # visible. Auto-downloaded by ultralytics.
   sample_fps: 8          # detection sampling rate (higher = tighter tracking)
+  crop_padding: 0.12     # widen the 9:16 crop by this fraction (0 = tight 9:16,
+                         # 0.12 = 12% wider with blurred bars). Reduces the
+                         # "zoomed in" feeling on talking-head content.
+  max_pan_speed: 0.20    # max crop movement in frame-widths/second (default was
+                         # 0.30). Lower = smoother, less jarring pans.
+  switch_hold: 2.5       # seconds a subject keeps the camera before it can
+                         # switch (default was 1.5). Higher = fewer jumps.
+  switch_margin: 2.0     # a challenger must be this many times more prominent
+                         # than the current subject to take over (default was
+                         # 1.5). Higher = stickier to the current subject.
 
 upload:
   # Both keys belong to the command-line daemon (`python main.py upload`).
