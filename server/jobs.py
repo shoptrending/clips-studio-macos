@@ -154,16 +154,20 @@ class Worker(threading.Thread):
             log_path = self.logs_dir / f"job_{job['id']}.log"
             if feedback.open_job_log(log_path):
                 db.set_job(job["id"], log_path=str(log_path))
-            broadcaster.publish({"type": "job", "job_id": job["id"], "status": "running"})
-            broadcaster.publish({"type": "queue"})
             if job["type"] == "process":
                 from sources.dispatch import identify
 
                 _, vid = identify(payload["url"])
-                # Recorded on the job so the queue can name and de-duplicate it
-                # without every reader re-parsing payload JSON.
                 if vid and not job["video_id"]:
                     db.set_job(job["id"], video_id=vid)
+            else:
+                vid = job["video_id"] or ""
+            job_event: dict = {"type": "job", "job_id": job["id"], "status": "running"}
+            if vid:
+                job_event["video_id"] = vid
+            broadcaster.publish(job_event)
+            broadcaster.publish({"type": "queue"})
+            if job["type"] == "process":
                 cancel.set_active(vid)  # mark which video is genuinely running
                 # Start every run from a clean slate. A cancel flag is sticky
                 # (deleting a video, or an actual cancel, calls request_cancel

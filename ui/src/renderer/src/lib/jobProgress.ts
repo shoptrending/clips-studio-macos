@@ -54,7 +54,7 @@ export const progressStore: { current: JobProgress } = { current: { ...emptyProg
 export function applyEvent(p: JobProgress, e: StudioEvent): JobProgress {
   if (e.type === 'job') {
     if (e.status === 'running')
-      return { ...emptyProgress, active: true, label: 'Starting…', startedAt: Date.now() }
+      return { ...emptyProgress, active: true, label: 'Starting…', startedAt: Date.now(), videoId: e.video_id || '' }
     if (e.status === 'done' || e.status === 'failed' || e.status === 'cancelled')
       return { ...emptyProgress }
   }
