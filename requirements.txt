@@ -2,7 +2,7 @@
 
 # Extractors break whenever a site changes, so this is the one dependency
 # you always want newest. No ceiling.
-yt-dlp>=2026.8.19
+yt-dlp>=2026.10.21
 yt-dlp-ejs==0.8.0
 
 # ---- transcription and vision --------------------------------------------
