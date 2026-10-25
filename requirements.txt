@@ -19,7 +19,7 @@ uvicorn[standard]>=0.52.4,<1
 
 # ---- everything else -------------------------------------------------------
 requests>=2.34.2,<3
-cryptography>=48,<49
+cryptography>=50.0.2,<51
 defusedxml>=0.7.1,<1
 PyYAML>=6.0.3,<7
 google-api-python-client>=2.198.0,<3
